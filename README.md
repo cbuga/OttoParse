@@ -67,6 +67,54 @@ pipe = Pipeline(
 records = pipe.process("archive_scan.pdf")
 ```
 
+## Manual testing
+
+A small command-line runner, `run_ottoparse.py`, lets you try the pipeline on
+your own files without writing any code. Drop PDFs or images into `samples/`
+(both `samples/` and the `results/` output folder are git-ignored, so private
+archival material is never committed) and run:
+
+```bash
+# a single file
+.venv/bin/python run_ottoparse.py samples/your_doc.pdf
+
+# a whole folder
+.venv/bin/python run_ottoparse.py samples/
+```
+
+For each page it prints the routing decision, the steps that ran, any quality
+flags (with measured values), a text preview for text-layer pages, and the path
+to the cleaned image for scanned pages. Cleaned images are written to
+`results/` by default.
+
+Supported inputs: PDF, and images (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`,
+`.bmp`, `.webp`).
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--any-script` | Accept text layers of any script. Use this for Latin / non-Arabic test PDFs; otherwise their text pages are flagged *suspect* and routed to the image path. Leave off for real Ottoman documents. |
+| `--out DIR` | Directory for cleaned images (default: `results/`). |
+| `--dpi N` | Rasterization DPI for image-only PDF pages (default: 300). |
+| `--json` | Also print each page record as JSON (the full Phase 2 hand-off object). |
+
+```bash
+# e.g. test a Latin PDF, higher DPI, custom output, with JSON dump
+.venv/bin/python run_ottoparse.py samples/doc.pdf --any-script --dpi 400 --out results/ --json
+```
+
+Note: the default router is tuned for Perso-Arabic text layers. A real Ottoman
+PDF with an Arabic text layer keeps its text when run without `--any-script`; a
+Latin-script test PDF needs `--any-script` or its text pages will be rasterized.
+
+## Running the tests
+
+```bash
+.venv/bin/pytest          # run the full suite
+.venv/bin/ruff check .    # lint
+```
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for the full, step-by-step history of changes.
