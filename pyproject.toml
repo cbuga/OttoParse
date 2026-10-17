@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ottoparse"
+version = "0.1.0"
+description = "Phase 1 intake & pre-processing for late-Ottoman printed (Matbu) documents: routing, deskewing, denoising, and adaptive binarization, plus deterministic PDF text extraction."
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "OttoParse" }]
+keywords = ["ottoman", "ocr", "preprocessing", "binarization", "deskew", "pdf", "corpus", "digital-humanities"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "scikit-image>=0.24",
+    "Pillow>=10.2",
+    "PyMuPDF>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-group/OttoParse"
+Repository = "https://github.com/your-group/OttoParse"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ottoparse"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
