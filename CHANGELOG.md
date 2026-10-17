@@ -6,7 +6,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `run_ottoparse.py`: a command-line runner for manual testing. Point it at a
+  single file or a folder of PDFs/images and it prints a per-page report
+  (routing decision, steps run, quality flags with measures, text preview, and
+  cleaned-image path), writing cleaned images to an output directory. Options:
+  `--out`, `--dpi`, `--any-script` (accept text layers of any script), and
+  `--json` (dump each record as JSON).
+- `samples/` folder (with a short README) as a drop spot for test documents.
+- "Manual testing" and "Running the tests" sections in the README documenting
+  the runner, its options, and the test/lint commands.
+
+### Changed
+
+- `.gitignore`: ignore the `samples/` and `results/` folders so private
+  archival material and generated outputs are never committed.
 
 ## [0.1.0] — 2026-10-17
 
