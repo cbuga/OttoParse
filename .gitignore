@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# OttoParse manual testing: sample inputs and cleaned outputs
+/samples/
+/results/
