@@ -5,6 +5,7 @@ from ottoparse.model.record import (
     PageRecord,
     ProcessingStep,
     Provenance,
+    Region,
     SourcePath,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "PageRecord",
     "ProcessingStep",
     "Provenance",
+    "Region",
     "SourcePath",
 ]

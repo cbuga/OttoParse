@@ -171,11 +171,18 @@ class Pipeline:
     ) -> None:
         cleaned = run_image_steps(image, self.config.image_steps, rec)
         rec.image = cleaned
+        # rec.gray was populated by run_image_steps (pre-binarization grayscale).
         if self.config.write_images_to is not None:
-            out_name = f"{path.stem}_p{page_index:04d}.png"
-            out_path = self.config.write_images_to / out_name
+            stem = f"{path.stem}_p{page_index:04d}"
             try:
-                rec.image_path = write_image(cleaned, out_path)
+                rec.image_path = write_image(
+                    cleaned, self.config.write_images_to / f"{stem}.png"
+                )
+                # Preserve the lossless grayscale next to the binary output.
+                if rec.gray is not None:
+                    rec.gray_path = write_image(
+                        rec.gray, self.config.write_images_to / f"{stem}_gray.png"
+                    )
             except Exception as exc:  # noqa: BLE001
                 rec.add_flag(
                     FlagCode.PROCESSING_ERROR, Severity.ERROR,

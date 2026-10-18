@@ -78,19 +78,71 @@ class ProcessingStep:
 
 
 @dataclass(slots=True)
+class Region:
+    """A rectangular area of a page flagged for downstream attention.
+
+    Used to mark low-confidence zones (faint ink, stains) without deleting the
+    pixels, so a lexicon matcher or language model can reconstruct the content
+    from the preserved grayscale.
+
+    Coordinates are pixel bounds on the page: ``(x, y)`` top-left, plus width
+    and height.
+
+    Attributes:
+        x, y, width, height: Bounding box in pixels.
+        kind: What the region represents (e.g. ``"low_confidence"``, ``"stain"``).
+        confidence: A 0-1 score; lower means more doubtful. For a stained patch
+            this is roughly the local contrast, so downstream can rank regions.
+        detail: Optional human-readable note.
+    """
+
+    x: int
+    y: int
+    width: int
+    height: int
+    kind: str = "low_confidence"
+    confidence: float | None = None
+    detail: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "kind": self.kind,
+            "confidence": self.confidence,
+            "detail": self.detail,
+        }
+
+
+@dataclass(slots=True)
 class PageRecord:
     """One page of Phase 1 output.
 
-    Exactly one of ``text`` / ``image`` is populated, matching ``source_path``.
-    ``image_path`` is set only when the cleaned image was written to disk.
+    For a text-layer page, ``text`` is populated. For an image page:
+
+    - ``gray`` holds the cleaned, **pre-binarization grayscale** — the lossless
+      representation. Binarization is irreversible and drops every faint stroke
+      that falls below threshold (exactly the text under a stain), so the
+      grayscale is preserved so Phase 2/3 can recover ambiguous glyphs.
+    - ``image`` holds the binary (black/white) result — a convenience view for
+      engines that want it, derived from the grayscale.
+
+    ``image_path`` / ``gray_path`` are set only when written to disk.
+    ``regions`` holds low-confidence regions (e.g. stains) flagged for
+    downstream reconstruction rather than deleted.
     """
 
     provenance: Provenance
     text: str | None = None
     image: np.ndarray | None = None
+    gray: np.ndarray | None = None
     image_path: Path | None = None
+    gray_path: Path | None = None
     flags: list[IssueFlag] = field(default_factory=list)
     history: list[ProcessingStep] = field(default_factory=list)
+    regions: list[Region] = field(default_factory=list)
 
     # --- convenience helpers -------------------------------------------------
 
@@ -115,6 +167,25 @@ class PageRecord:
         step = ProcessingStep(name=name, strategy=strategy, params=params)
         self.history.append(step)
         return step
+
+    def add_region(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        *,
+        kind: str = "low_confidence",
+        confidence: float | None = None,
+        detail: str | None = None,
+    ) -> Region:
+        """Record a low-confidence region and return it."""
+        region = Region(
+            x=x, y=y, width=width, height=height,
+            kind=kind, confidence=confidence, detail=detail,
+        )
+        self.regions.append(region)
+        return region
 
     @property
     def is_text(self) -> bool:
@@ -148,8 +219,10 @@ class PageRecord:
             "provenance": self.provenance.to_dict(),
             "text": self.text,
             "image_path": str(self.image_path) if self.image_path else None,
+            "gray_path": str(self.gray_path) if self.gray_path else None,
             "flags": [f.to_dict() for f in self.flags],
             "history": [s.to_dict() for s in self.history],
+            "regions": [r.to_dict() for r in self.regions],
         }
         if include_image and self.image is not None:
             d["image_shape"] = list(self.image.shape)

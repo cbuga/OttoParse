@@ -67,6 +67,90 @@ pipe = Pipeline(
 records = pipe.process("archive_scan.pdf")
 ```
 
+## Degraded pages: preserving faint text
+
+Binarization is irreversible: every stroke that falls below the threshold —
+exactly the faded text sitting on a dark stain — is gone. Those faint strokes
+are often real Ottoman words or Persian izafet links, not noise, so OttoParse
+does **not** treat the binary image as the only output.
+
+- **Grayscale is preserved.** Each image `PageRecord` carries both `image` (the
+  binary convenience view) and `gray` (the cleaned, pre-binarization grayscale,
+  with all tonal information intact). When writing to disk, a companion
+  `{stem}_gray.png` is saved next to the binary `{stem}.png`. A downstream
+  OCR/HTR engine or lexicon/language-model stage can mine the grayscale to
+  recover glyphs the binary view dropped.
+- **Low-confidence regions are flagged, not deleted.** The opt-in `ConfidenceMap`
+  step marks faint/stained areas as `Region`s (with a 0-1 confidence score and a
+  `LOW_CONFIDENCE_REGION` flag) without altering a single pixel, so later stages
+  know where to look and can reconstruct contextually.
+
+```python
+from ottoparse import Pipeline
+from ottoparse.imaging import (
+    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
+)
+
+pipe = Pipeline(image_steps=[
+    HoughDeskew(),
+    NlMeansDenoiser(),
+    ConfidenceMap(),        # flag faint/stained regions on grayscale; deletes nothing
+    SauvolaBinarizer(),
+], write_images_to="out/")  # also writes out/<name>_gray.png per page
+
+rec = pipe.process("samples/1-1.jpg")[0]
+rec.gray          # lossless grayscale (ndarray)
+rec.regions       # low-confidence bounding boxes with confidence scores
+```
+
+Place `ConfidenceMap` **before** binarization (so it sees grayscale tones);
+after binarization every pixel is pure black/white and no area looks faint.
+
+`ConfidenceMap`'s threshold is adaptive by default (a low percentile of the
+page's own tile contrasts), so it flags areas faint *relative to that page*
+rather than using a fixed cutoff that misreads uniformly-yellowed paper. Honest
+limit: where a stain fully covered the ink there is no signal to recover — the
+grayscale and flags preserve what is faint-but-present, not what is gone.
+
+## Artifact removal (periodicals)
+
+Historical periodicals carry non-body material — seals, stamps, editorial
+notes, a central title emblem/watermark, and ink blots — that survives
+binarization and pollutes line serialization. Two **opt-in** image steps address
+this (both off by default, since they are layout-specific and lossy):
+
+- **`ComponentFilter`** — runs after binarization and removes connected
+  components whose *shape* looks like an artifact (tiny ghost specks; large,
+  densely-filled blobs such as stamps and ink blots) while leaving text alone.
+  Robust to where the artifact sits on the page.
+- **`RegionMask`** — blanks configurable page regions given as *fractions* of
+  page size (e.g. a masthead band and side margins). Use this for the central
+  watermark and editorial stamps, which are not distinguishable from text by
+  shape. It records the masked bounds and raises a flag, so the (lossy) removal
+  is auditable — a masthead holds real metadata you may want to keep.
+
+```python
+from ottoparse import Pipeline
+from ottoparse.imaging import (
+    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
+)
+
+# Clean a periodical front page: strip specks/blobs page-wide, then mask the
+# top masthead band that holds the seal, watermark, and editorial stamp.
+pipe = Pipeline(image_steps=[
+    HoughDeskew(),
+    NlMeansDenoiser(),
+    SauvolaBinarizer(),
+    ComponentFilter(),       # remove specks and solid blobs (stamps, blots)
+    RegionMask(top=0.22),    # suppress the masthead band (tune per layout)
+])
+records = pipe.process("samples/1-1.jpg")
+```
+
+Order matters: `ComponentFilter` must come **after** binarization (it needs a
+binary image), and `RegionMask` is typically last. The `top` fraction is
+layout-specific — tune it on your own scans.
+
 ## Manual testing
 
 A small command-line runner, `run_ottoparse.py`, lets you try the pipeline on
