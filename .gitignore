@@ -222,3 +222,4 @@ __marimo__/
 # OttoParse manual testing: sample inputs and cleaned outputs
 /samples/
 /results/
+/results2/

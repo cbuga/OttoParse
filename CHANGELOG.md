@@ -8,6 +8,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- CLAHE contrast enhancement (`ottoparse/imaging/enhance.py`), `ClaheEnhancer`
+  — wraps OpenCV's CLAHE to equalize contrast in local tiles on the grayscale,
+  lifting faint text on degraded/stained historical print before denoising and
+  binarization. Tunable `clip_limit` (default 2.0) and `tile_grid_size`
+  (default 8x8). Validated on a real stained periodical scan: at `clip_limit=2.0`
+  lines lost under a blot became legible, while higher limits traded legibility
+  for amplified noise.
 - Grayscale preservation alongside binarization (non-destructive output). The
   cleaned, pre-binarization grayscale is now kept so faint strokes that fall
   below the binary threshold — the text under a stain — are never lost:
@@ -54,6 +61,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Default image chain is now **deskew → CLAHE → denoise → Sauvola** (CLAHE
+  added at `clip_limit=2.0`). This changes the output of `Pipeline()` for all
+  pages, including clean ones; to opt out, pass an explicit `image_steps`
+  without `ClaheEnhancer`.
 - `.gitignore`: ignore the `samples/` and `results/` folders so private
   archival material and generated outputs are never committed.
 
