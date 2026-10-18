@@ -51,6 +51,13 @@ class FlagCode(StrEnum):
     # --- Binarization (1.4) ---
     BINARIZATION_DEGENERATE = "BINARIZATION_DEGENERATE"  # output nearly all one color
 
+    # --- Confidence mapping (non-destructive) ---
+    LOW_CONFIDENCE_REGION = "LOW_CONFIDENCE_REGION"  # faint/stained area flagged, not deleted
+
+    # --- Artifact removal (post-binarization) ---
+    ARTIFACT_REMOVED = "ARTIFACT_REMOVED"    # blob-like component(s) stripped
+    REGION_MASKED = "REGION_MASKED"          # a page region was blanked
+
     # --- General / IO ---
     UNREADABLE_PAGE = "UNREADABLE_PAGE"      # page could not be decoded at all
     PROCESSING_ERROR = "PROCESSING_ERROR"    # an unexpected error during a step

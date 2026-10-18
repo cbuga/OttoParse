@@ -8,6 +8,40 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Grayscale preservation alongside binarization (non-destructive output). The
+  cleaned, pre-binarization grayscale is now kept so faint strokes that fall
+  below the binary threshold — the text under a stain — are never lost:
+  - `PageRecord` gained `gray` (the lossless grayscale) and `gray_path`
+    fields; `image` remains the binary convenience view. `run_image_steps`
+    snapshots the grayscale feeding the first binarizer (or the final cleaned
+    image if no binarizer runs), and the pipeline writes a companion
+    `{stem}_gray.png` when `write_images_to` is set.
+- Confidence mapping guardrail (`ottoparse/imaging/confidence.py`),
+  `ConfidenceMap` — a **non-destructive** opt-in step that flags faint/stained
+  areas instead of deleting them, so a downstream lexicon matcher or language
+  model can reconstruct ambiguous glyphs from the preserved grayscale:
+  - Divides the page into tiles, measures local contrast, and flags low-contrast
+    (but non-blank) tiles, merging adjacent ones into bounding-box regions.
+  - Threshold is **adaptive by default** (a low percentile of the page's own
+    tile contrasts), since a fixed cutoff cannot tell a crisp page from a
+    uniformly-faded one; an absolute `min_contrast` override is available.
+  - Records each area as a `Region` (new `PageRecord.regions` list + `Region`
+    model type) with a 0-1 confidence score, plus a page-level
+    `LOW_CONFIDENCE_REGION` flag (new code). Returns pixels untouched.
+- Artifact removal for periodicals (`ottoparse/imaging/artifacts.py`), two
+  opt-in image steps (off by default):
+  - `ComponentFilter` — post-binarization connected-component removal of ghost
+    specks and large solid blobs (stamps, seals, ink blots) by shape, leaving
+    text intact. Defaults (`min_area=6`, `max_area=900`, `blob_fill=0.45`) were
+    tuned against a real periodical scan.
+  - `RegionMask` — blanks configurable page regions given as fractions of page
+    size (top/bottom/left/right); records the bounds and raises a
+    `REGION_MASKED` warning so the lossy masking is auditable. Reliable for the
+    central masthead watermark and editorial stamps, which shape-based filtering
+    cannot distinguish from text.
+  - New flag codes `ARTIFACT_REMOVED` and `REGION_MASKED`.
+  - Documented in the README with a periodical front-page example, and covered
+    by `tests/test_artifacts.py`.
 - `run_ottoparse.py`: a command-line runner for manual testing. Point it at a
   single file or a folder of PDFs/images and it prints a per-page report
   (routing decision, steps run, quality flags with measures, text preview, and
