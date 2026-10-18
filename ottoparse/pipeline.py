@@ -21,6 +21,7 @@ from ottoparse.core.strategy import ImageStep, PageRouter
 from ottoparse.imaging.binarize import SauvolaBinarizer
 from ottoparse.imaging.denoise import NlMeansDenoiser
 from ottoparse.imaging.deskew import HoughDeskew
+from ottoparse.imaging.enhance import ClaheEnhancer
 from ottoparse.imaging.pipeline import run_image_steps
 from ottoparse.intake.pdf_text import extract_page_text, normalize_text
 from ottoparse.intake.rasterize import rasterize_page
@@ -31,8 +32,19 @@ from ottoparse.model.record import PageRecord, Provenance, SourcePath
 
 
 def default_image_steps() -> list[ImageStep]:
-    """The default Phase 1 image-cleanup chain: deskew -> denoise -> Sauvola."""
-    return [HoughDeskew(), NlMeansDenoiser(), SauvolaBinarizer()]
+    """The default Phase 1 image-cleanup chain.
+
+    Order: deskew -> CLAHE contrast enhancement -> denoise -> Sauvola
+    binarization. CLAHE (``clip_limit=2.0``) runs on the deskewed grayscale to
+    lift faint text on degraded/stained historical print before denoising and
+    binarization; the conservative clip limit avoids over-amplifying clean pages.
+    """
+    return [
+        HoughDeskew(),
+        ClaheEnhancer(clip_limit=2.0),
+        NlMeansDenoiser(),
+        SauvolaBinarizer(),
+    ]
 
 
 class Pipeline:
