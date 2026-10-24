@@ -7,7 +7,8 @@ all flag ``BINARIZATION_DEGENERATE`` if the result is nearly a single color
 
 - :class:`OtsuBinarizer` (default) — global thresholding. Fast; works well
   once the background is flat, which is why the default chain runs
-  ``BackgroundNormalizer`` first. Poor on raw uneven backgrounds.
+  ``BackgroundNormalizer`` first. Poor on raw uneven backgrounds. By default
+  it also drops faint stand-alone marks with no dark core (foxing).
 - :class:`SauvolaBinarizer` — local adaptive thresholding for pages that were
   not background-normalized. Its small window can mistake stain edges for ink.
 - :class:`AdaptiveGaussianBinarizer` — OpenCV mean/Gaussian adaptive threshold.
@@ -73,15 +74,80 @@ class SauvolaBinarizer:
 
 
 class OtsuBinarizer:
-    """Global (Otsu) binarization — the default, after background normalization."""
+    """Global (Otsu) binarization — the default, after background normalization.
+
+    On a flattened page Otsu's threshold sits high (paper is near-white, faded
+    ink only mid-gray), so faint foxing spots and stain-edge mottling also fall
+    below it and come out as solid black dots — next to a letter they read as a
+    nuqta. Printed ink, even faded, has a dark core; foxing does not. With
+    ``core_contrast`` set, Otsu still defines every component's shape, but a
+    component is kept only if its darkest pixel reaches a stricter "core"
+    level (hysteresis thresholding):
+
+        core = ink_level + core_contrast * (otsu - ink_level)
+
+    where ``ink_level`` is the 10th percentile of the pixels Otsu marked as ink.
+    Thin upright strokes (an alif, a rule) are blurred lighter than their
+    width suggests, so components at least ``upright_aspect`` times taller
+    than wide are always kept.
+
+    Marks *touching* a glyph merge into its component and are kept; this step
+    only removes faint components that stand alone.
+
+    Args:
+        core_contrast: Position of the core level between the ink level (0)
+            and Otsu's threshold (1). Lower keeps more faint marks. ``None``
+            disables core filtering (plain Otsu).
+        upright_aspect: Height/width ratio at or above which a faint component
+            is kept regardless of its core.
+    """
 
     name = "binarize"
 
+    # Percentile of the ink pixels taken as the page's typical ink darkness.
+    _INK_PERCENTILE = 10
+
+    def __init__(self, core_contrast: float | None = 0.4, upright_aspect: float = 2.5) -> None:
+        if core_contrast is not None and not 0.0 < core_contrast < 1.0:
+            raise ValueError("core_contrast must be in (0, 1) or None")
+        if upright_aspect <= 0:
+            raise ValueError("upright_aspect must be > 0")
+        self.core_contrast = core_contrast
+        self.upright_aspect = upright_aspect
+
+    def _drop_coreless(self, gray: np.ndarray, binary: np.ndarray, otsu: float) -> int:
+        """Clear faint, non-upright components in place; return how many."""
+        ink = binary == 0
+        if not ink.any():
+            return 0
+        ink_level = float(np.percentile(gray[ink], self._INK_PERCENTILE))
+        core = ink_level + self.core_contrast * (otsu - ink_level)
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(
+            ink.astype(np.uint8), connectivity=8
+        )
+        # Darkest pixel per component: scatter-min of gray over the labels.
+        darkest = np.full(n, 255, np.uint8)
+        np.minimum.at(darkest, labels[ink], gray[ink])
+        upright = stats[:, cv2.CC_STAT_HEIGHT] >= self.upright_aspect * stats[:, cv2.CC_STAT_WIDTH]
+        drop = (darkest >= core) & ~upright
+        drop[0] = False  # background label
+        binary[drop[labels]] = 255
+        return int(drop.sum())
+
     def apply(self, image: np.ndarray, record: PageRecord) -> np.ndarray:
         gray = to_grayscale(image)
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        otsu, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        if self.core_contrast is None:
+            _check_degenerate(binary, record, self.name)
+            record.add_step(self.name, "otsu")
+            return binary
+        removed = self._drop_coreless(gray, binary, otsu)
         _check_degenerate(binary, record, self.name)
-        record.add_step(self.name, "otsu")
+        record.add_step(
+            self.name, "otsu_hysteresis",
+            core_contrast=self.core_contrast, upright_aspect=self.upright_aspect,
+            removed_faint=removed,
+        )
         return binary
 
 

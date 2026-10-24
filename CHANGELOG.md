@@ -71,8 +71,27 @@ outlines and paper folds into thick black contours running through the text.
   quality measurements now see flat paper; `BLEED_THROUGH` no longer fires on
   merely yellowed or stained paper.
 
+- **Foxing suppression in `OtsuBinarizer`** (on by default). On a flattened
+  page Otsu's threshold sits high (~190-197 on the samples, because faded ink
+  is only mid-gray), so faint foxing spots also fall below it. They came out
+  as solid black dots, and next to a letter they read as a nuqta. Printed ink,
+  even faded, has a dark core (darkest pixel ~90-100 on the samples) and
+  foxing does not (~160). Otsu still defines the shapes, but a component is
+  kept only if its darkest pixel reaches
+  `ink_level + core_contrast * (otsu - ink_level)`, where `ink_level` is the
+  10th percentile of ink pixels and `core_contrast` defaults to 0.4.
+  Components at least `upright_aspect` (2.5) times taller than wide are always
+  kept, because thin alifs and rules blur lighter than their width suggests.
+  `core_contrast=None` restores plain Otsu. Logs strategy `"otsu_hysteresis"`
+  with a `removed_faint` count; on the three samples it removed 407-714 faint
+  marks per page (foxing, stain-edge mottling, pencil annotations, margin
+  specks) with text intact on visual inspection.
+
 ### Known limitations
 
+- Faint marks *touching* a glyph merge into its component and are kept by the
+  foxing filter. The filter also removes faint print that has no dark core,
+  e.g. very light punctuation dots.
 - Solid dark areas wider than the normalization kernel (large calligraphic
   mastheads, filled illustrations) come out hollow; raise `kernel_size` if
   that matters.

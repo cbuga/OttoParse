@@ -26,7 +26,9 @@ This release implements **Phase 1 only**:
   downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
 - **1.4 Binarization** — Otsu by default (a global threshold is enough once
   the background is flat), with Sauvola and adaptive-Gaussian available as
-  swappable alternatives.
+  swappable alternatives. Otsu drops faint stand-alone marks with no dark ink
+  core, such as foxing spots that would otherwise read as dots
+  (`core_contrast=None` turns this off).
 - **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
   blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
 

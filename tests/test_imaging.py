@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
@@ -118,6 +119,40 @@ def test_binarizers_produce_binary(text_image, binarizer):
     uniq = np.unique(out)
     assert set(uniq.tolist()).issubset({0, 255})
     assert out.dtype == np.uint8
+
+
+def _foxed_page() -> np.ndarray:
+    """A flattened page: dark text, a faint foxing spot beside it, a faint alif."""
+    page = np.full((300, 400), 245, np.uint8)
+    for y in range(60, 260, 40):
+        cv2.putText(page, "matbu line", (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 60, 2)
+    cv2.circle(page, (230, 45), 5, 130, -1)   # foxing spot just above a line
+    page[150:190, 300:302] = 130              # thin, faint upright stroke
+    return page
+
+
+def test_otsu_drops_faint_foxing_keeps_text_and_upright_strokes():
+    rec = _record()
+    page = _foxed_page()
+    out = OtsuBinarizer().apply(page, rec)
+    assert (out[40:51, 225:236] == 255).all()        # foxing spot removed
+    assert (out[150:190, 300:302] == 0).mean() > 0.9  # faint alif kept
+    assert (out[page == 60] == 0).mean() > 0.99       # text kept
+    step = next(s for s in rec.history if s.name == "binarize")
+    assert step.strategy == "otsu_hysteresis"
+    assert step.params["removed_faint"] >= 1
+
+
+def test_otsu_plain_mode_keeps_foxing():
+    out = OtsuBinarizer(core_contrast=None).apply(_foxed_page(), _record())
+    assert (out[40:51, 225:236] == 0).any()
+
+
+@pytest.mark.parametrize("kwargs", [{"core_contrast": 0.0}, {"core_contrast": 1.0},
+                                    {"upright_aspect": 0}])
+def test_otsu_rejects_bad_params(kwargs):
+    with pytest.raises(ValueError):
+        OtsuBinarizer(**kwargs)
 
 
 def test_sauvola_rejects_even_window():
