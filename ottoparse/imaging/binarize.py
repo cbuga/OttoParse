@@ -79,7 +79,7 @@ class OtsuBinarizer:
     On a flattened page Otsu's threshold sits high (paper is near-white, faded
     ink only mid-gray), so faint foxing spots and stain-edge mottling also fall
     below it and come out as solid black dots — next to a letter they read as a
-    nuqta. Printed ink, even faded, has a dark core; foxing does not. With
+    nokta. Printed ink, even faded, has a dark core; foxing does not. With
     ``core_contrast`` set, Otsu still defines every component's shape, but a
     component is kept only if its darkest pixel reaches a stricter "core"
     level (hysteresis thresholding):

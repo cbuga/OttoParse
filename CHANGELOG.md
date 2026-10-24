@@ -33,7 +33,7 @@ outlines and paper folds into thick black contours running through the text.
   strategy `"projection"`, and keeps `HoughDeskew`'s `max_angle` /
   `min_correction` semantics and flags.
 - A `periodical_page` test fixture: a rotated, real-like RGB page (yellowed
-  paper, stain, ragged dark margin, two columns of broken Arabic-like lines
+  paper, stain, ragged dark margin, two columns of broken lines imitating Ottoman Turkish print
   with dots, white rotation corners). Tests check that `ProjectionDeskew`
   recovers the rotation and levels the page. A regression test on
   `samples/1-*.jpg` runs when the private samples are present and skips
@@ -44,9 +44,9 @@ outlines and paper folds into thick black contours running through the text.
 - Deskew never ran on real input. `HoughDeskew` flagged `SKEW_UNDETECTED`
   ("no near-horizontal lines found") on every real periodical sample.
   `HoughLinesP` needs one unbroken edge segment of at least a quarter of the
-  page width (~500 px). On two-column Arabic-script print, word gaps are wider
-  than the 15 px dilation plus the 20 px `maxLineGap`, so no line ever gets
-  that long. The synthetic `cv2.putText` pages have continuous Latin baselines,
+  page width (~500 px). On two-column Ottoman Turkish (Perso-Arabic script)
+  print, word gaps are wider than the 15 px dilation plus the 20 px
+  `maxLineGap`, so no line ever gets that long. The synthetic `cv2.putText` pages have continuous Latin baselines,
   which hid this. The default chain now uses `ProjectionDeskew`, which
   estimates -0.40°, -0.85° and -0.10° on `samples/1-1`, `1-2` and `1-4` and
   recovers 3°/-5°/8° rotations of them to within ~0.4°. `HoughDeskew` is
@@ -74,7 +74,7 @@ outlines and paper folds into thick black contours running through the text.
 - **Foxing suppression in `OtsuBinarizer`** (on by default). On a flattened
   page Otsu's threshold sits high (~190-197 on the samples, because faded ink
   is only mid-gray), so faint foxing spots also fall below it. They came out
-  as solid black dots, and next to a letter they read as a nuqta. Printed ink,
+  as solid black dots, and next to a letter they read as a nokta. Printed ink,
   even faded, has a dark core (darkest pixel ~90-100 on the samples) and
   foxing does not (~160). Otsu still defines the shapes, but a component is
   kept only if its darkest pixel reaches

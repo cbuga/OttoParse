@@ -43,7 +43,7 @@ def _periodical_page(angle: float = 0.0, size=(1450, 1000), seed: int = 0) -> np
     Yellowed paper, a dark scanner margin, a brown stain, and two columns split
     by a rule. Each line is a run of baseline-aligned "words" of uneven height
     with dots above and below and wide gaps between them, so there is no long
-    straight baseline -- like Arabic-script print, unlike ``cv2.putText``. The
+    straight baseline -- like Ottoman Turkish print, unlike ``cv2.putText``. The
     rotation fills the corners with white, as a scanner bed or a prior rotation
     would.
     """
@@ -68,7 +68,7 @@ def _periodical_page(angle: float = 0.0, size=(1450, 1000), seed: int = 0) -> np
                 for sx in range(x, end, 9):  # uneven letter heights on the baseline
                     top = base - int(rng.integers(4, 16))
                     cv2.line(img, (sx, top), (sx, base), (30, 30, 30), 2)
-                for _ in range(int(rng.integers(1, 4))):  # nuqta dots
+                for _ in range(int(rng.integers(1, 4))):  # nokta dots
                     dx = int(rng.integers(x, end))
                     dy = base + 6 if rng.random() < 0.5 else base - 20
                     cv2.circle(img, (dx, dy), 2, (30, 30, 30), -1)
@@ -84,7 +84,7 @@ def _periodical_page(angle: float = 0.0, size=(1450, 1000), seed: int = 0) -> np
 
 @pytest.fixture
 def periodical_page():
-    """Factory for synthetic, real-like Arabic-script periodical pages (RGB)."""
+    """Factory for synthetic, real-like Ottoman Turkish periodical pages (RGB)."""
     return _periodical_page
 
 

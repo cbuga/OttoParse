@@ -65,7 +65,7 @@ def test_projection_deskew_estimates_skew(text_image, angle):
 @pytest.mark.parametrize("angle", [4.0, -3.0, 7.0])
 def test_projection_deskew_on_rotated_periodical_page(periodical_page, angle):
     # Yellowed RGB paper, stain, dark margin, white rotation corners, and
-    # broken Arabic-like lines: the estimate must still recover the rotation.
+    # broken Ottoman-like lines: the estimate must still recover the rotation.
     rec = _record()
     page = periodical_page(angle=angle)
     est = ProjectionDeskew().estimate_angle(to_grayscale(page))
