@@ -225,3 +225,6 @@ __marimo__/
 /results/
 /results2/
 /results3/
+
+# Reference papers (cite by DOI; keep PDFs out of the repo)
+/docs/*.pdf
