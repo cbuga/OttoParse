@@ -77,15 +77,21 @@ outlines and paper folds into thick black contours running through the text.
   as solid black dots, and next to a letter they read as a nokta. Printed ink,
   even faded, has a dark core (darkest pixel ~90-100 on the samples) and
   foxing does not (~160). Otsu still defines the shapes, but a component is
-  kept only if its darkest pixel reaches
-  `ink_level + core_contrast * (otsu - ink_level)`, where `ink_level` is the
-  10th percentile of ink pixels and `core_contrast` defaults to 0.4.
-  Components at least `upright_aspect` (2.5) times taller than wide are always
-  kept, because thin alifs and rules blur lighter than their width suggests.
-  `core_contrast=None` restores plain Otsu. Logs strategy `"otsu_hysteresis"`
-  with a `removed_faint` count; on the three samples it removed 407-714 faint
-  marks per page (foxing, stain-edge mottling, pencil annotations, margin
-  specks) with text intact on visual inspection.
+  kept only if some pixel is darker than
+  `ink_level + core_contrast * (otsu - ink_level)` (`core_contrast` 0.4).
+  - `ink_level` is **local**: the 10th percentile of ink in each `window`
+    (150 px) tile, interpolated across the page. A page-wide level deleted
+    whole faded letters under stains (e.g. "دى" on 1-1). Tiles with under 2%
+    ink fall back to the page-wide level, so a tile holding only foxing can't
+    become its own reference.
+  - Two shapes are always kept: upright strokes (`upright_aspect` 2.5, e.g.
+    elifs) and horizontal ones (`rule_aspect` 5, printed rules that layout
+    analysis needs).
+  - `core_contrast=None` restores plain Otsu. Logs strategy
+    `"otsu_hysteresis"` with a `removed_faint` count: 347-504 marks per sample
+    page (foxing, stain blobs, pencil annotations, specks). The foxing dot
+    above "سماوى" on 1-1 is removed; the stain-faded letters, rules and the
+    dots checked near ش are kept.
 
 ### Known limitations
 
