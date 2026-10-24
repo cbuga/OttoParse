@@ -6,6 +6,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] — 2026-10-17
+
+Focus of this release: handling degraded, stained late-Ottoman periodical
+scans without destroying faint text, and enriching the default cleanup chain.
+
 ### Added
 
 - CLAHE contrast enhancement (`ottoparse/imaging/enhance.py`), `ClaheEnhancer`
@@ -24,9 +31,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     image if no binarizer runs), and the pipeline writes a companion
     `{stem}_gray.png` when `write_images_to` is set.
 - Confidence mapping guardrail (`ottoparse/imaging/confidence.py`),
-  `ConfidenceMap` — a **non-destructive** opt-in step that flags faint/stained
-  areas instead of deleting them, so a downstream lexicon matcher or language
-  model can reconstruct ambiguous glyphs from the preserved grayscale:
+  `ConfidenceMap` — a **non-destructive** step (now part of the default chain,
+  before binarization) that flags faint/stained areas instead of deleting them,
+  so a downstream lexicon matcher or language model can reconstruct ambiguous
+  glyphs from the preserved grayscale:
   - Divides the page into tiles, measures local contrast, and flags low-contrast
     (but non-blank) tiles, merging adjacent ones into bounding-box regions.
   - Threshold is **adaptive by default** (a low percentile of the page's own
@@ -35,13 +43,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Records each area as a `Region` (new `PageRecord.regions` list + `Region`
     model type) with a 0-1 confidence score, plus a page-level
     `LOW_CONFIDENCE_REGION` flag (new code). Returns pixels untouched.
-- Artifact removal for periodicals (`ottoparse/imaging/artifacts.py`), two
-  opt-in image steps (off by default):
+- Artifact removal for periodicals (`ottoparse/imaging/artifacts.py`):
   - `ComponentFilter` — post-binarization connected-component removal of ghost
     specks and large solid blobs (stamps, seals, ink blots) by shape, leaving
     text intact. Defaults (`min_area=6`, `max_area=900`, `blob_fill=0.45`) were
-    tuned against a real periodical scan.
-  - `RegionMask` — blanks configurable page regions given as fractions of page
+    tuned against a real periodical scan. Now part of the default chain (runs
+    last) to clean the speckle CLAHE/denoise leave behind.
+  - `RegionMask` (opt-in) — blanks configurable page regions given as fractions
+    of page
     size (top/bottom/left/right); records the bounds and raises a
     `REGION_MASKED` warning so the lossy masking is auditable. Reliable for the
     central masthead watermark and editorial stamps, which shape-based filtering
@@ -61,10 +70,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Default image chain is now **deskew → CLAHE → denoise → Sauvola** (CLAHE
-  added at `clip_limit=2.0`). This changes the output of `Pipeline()` for all
-  pages, including clean ones; to opt out, pass an explicit `image_steps`
-  without `ClaheEnhancer`.
+- Default image chain expanded from **deskew → denoise → Sauvola** to
+  **deskew → CLAHE → denoise → ConfidenceMap → Sauvola → ComponentFilter**.
+  This changes the output of `Pipeline()` for all pages, including clean ones,
+  and adds per-page work (ConfidenceMap tiles the whole page). To restore a
+  leaner chain, pass an explicit `image_steps`.
 - `.gitignore`: ignore the `samples/` and `results/` folders so private
   archival material and generated outputs are never committed.
 
@@ -193,5 +203,6 @@ Below is the step-by-step build history, in the order each piece was added.
 - **31 tests, all passing** (~2.2s). `ruff` reports no issues across the package
   and tests.
 
-[Unreleased]: https://github.com/your-group/OttoParse/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/your-group/OttoParse/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/your-group/OttoParse/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/your-group/OttoParse/releases/tag/v0.1.0
