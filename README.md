@@ -7,7 +7,7 @@ per-page records ready to hand to a downstream OCR/HTR stage (Phase 2). It does
 **not** perform OCR itself — its job is to route, clean, and normalize input, and
 to flag quality problems rather than silently drop them.
 
-## Scope (v0.2)
+## Scope (v0.3)
 
 This release implements **Phase 1 only**:
 
@@ -16,8 +16,8 @@ This release implements **Phase 1 only**:
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
 - **1.2 Deskewing & alignment** — correct page rotation. `ProjectionDeskew`
   (default) picks the angle that makes the row ink profile sharpest, which
-  works on Ottoman Turkish (Perso-Arabic script) print; `HoughDeskew` (long baselines) remains
-  available for Latin print.
+  works on Ottoman Turkish (Perso-Arabic script) print; `HoughDeskew` (long
+  baselines) remains available for Latin print.
 - **Background normalization** — divide the page by its estimated paper tone
   so stains, foxing, and uneven lighting flatten to white while ink keeps its
   contrast. (CLAHE remains available as an opt-in alternative.)
@@ -29,8 +29,9 @@ This release implements **Phase 1 only**:
   swappable alternatives. Otsu drops faint stand-alone marks with no dark ink
   core, such as foxing spots that would otherwise read as dots
   (`core_contrast=None` turns this off).
-- **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
-  blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
+- **Artifact removal** — `ComponentFilter` (default) strips ghost specks and
+  solid blobs (stamps, seals, ink blots) after binarization; `RegionMask`
+  (opt-in) blanks masthead bands.
 
 The default image chain is
 **deskew → background normalization → denoise → confidence map → Otsu →
@@ -130,6 +131,57 @@ BackgroundNormalizer(kernel_size=41)     # fixed kernel (odd, wider than strokes
   mastheads, filled illustrations, thick bars) are treated as background and
   come out hollow or blank. Use a larger `kernel_size` if that matters.
 
+## Deskew on real scans
+
+`HoughDeskew` looks for long, straight baselines. Ottoman Turkish print has
+none long enough: word gaps break every line and periodicals are set in
+narrow columns, so on real scans it found no lines and the page was never
+deskewed. `ProjectionDeskew` instead rotates a downscaled, background-flattened
+copy over candidate angles and keeps the one where ink piles up into the
+sharpest horizontal bands (a projection profile). It keeps only glyph-sized
+components, so stains, scan margins and column rules do not steer it.
+
+```python
+from ottoparse.imaging import ProjectionDeskew
+
+ProjectionDeskew()                       # +/-15 deg, ignore < 0.1 deg
+ProjectionDeskew(max_angle=10, min_correction=0.2)
+```
+
+It records the angle and whether it was applied in the processing history,
+and flags `SEVERE_SKEW` / `SKEW_UNDETECTED` the same way `HoughDeskew` does.
+
+## Foxing and faint marks (binarization)
+
+After background normalization the paper is near-white but faded ink is only
+mid-gray, so Otsu's threshold sits high and faint foxing spots fall below it
+too. They come out as solid dots, and next to a letter a dot can change it
+(ر/ز, ح/خ, ب/ت). `OtsuBinarizer` therefore uses two levels (hysteresis):
+Otsu defines each mark's shape, but a mark is kept only if some pixel is
+darker than a stricter *core* level. Printed ink, even faded, has a dark core;
+foxing does not.
+
+- **The core level is local.** It is measured from the ink in each ~150 px
+  tile, so faded letters under a stain are judged against their own faded
+  neighbours, not against clean print elsewhere. Tiles with little ink use
+  the page-wide level, so foxing alone in a margin cannot vouch for itself.
+- **Thin shapes are always kept:** tall, narrow strokes (an elif) and long
+  horizontal ones (printed rules, which layout analysis needs).
+- **Only stand-alone marks are removed.** A faint mark touching a letter
+  merges with it and stays.
+
+```python
+from ottoparse.imaging import OtsuBinarizer
+
+OtsuBinarizer()                          # defaults: core_contrast=0.4, window=150
+OtsuBinarizer(core_contrast=0.3)         # keep more faint marks
+OtsuBinarizer(core_contrast=None)        # plain Otsu, no foxing filter
+```
+
+The step logs `removed_faint` (the number of marks removed) in the processing
+history. If real nokta, hemze or medde go missing on a corpus, lower
+`core_contrast`; the preserved grayscale (`record.gray`) still has every mark.
+
 ## Contrast enhancement (CLAHE, opt-in)
 
 Degraded historical paper has wildly uneven text-to-background contrast: crisp
@@ -206,18 +258,18 @@ grayscale and flags preserve what is faint-but-present, not what is gone.
 
 Historical periodicals carry non-body material — seals, stamps, editorial
 notes, a central title emblem/watermark, and ink blots — that survives
-binarization and pollutes line serialization. Two **opt-in** image steps address
-this (both off by default, since they are layout-specific and lossy):
+binarization and pollutes line serialization. Two image steps address this:
 
-- **`ComponentFilter`** — runs after binarization and removes connected
-  components whose *shape* looks like an artifact (tiny ghost specks; large,
-  densely-filled blobs such as stamps and ink blots) while leaving text alone.
-  Robust to where the artifact sits on the page.
-- **`RegionMask`** — blanks configurable page regions given as *fractions* of
-  page size (e.g. a masthead band and side margins). Use this for the central
-  watermark and editorial stamps, which are not distinguishable from text by
-  shape. It records the masked bounds and raises a flag, so the (lossy) removal
-  is auditable — a masthead holds real metadata you may want to keep.
+- **`ComponentFilter`** (in the default chain) — runs after binarization and
+  removes connected components whose *shape* looks like an artifact (tiny
+  ghost specks; large, densely-filled blobs such as stamps and ink blots) while
+  leaving text alone. Robust to where the artifact sits on the page.
+- **`RegionMask`** (opt-in, since it is layout-specific and lossy) — blanks
+  configurable page regions given as *fractions* of page size (e.g. a masthead
+  band and side margins). Use this for the central watermark and editorial
+  stamps, which are not distinguishable from text by shape. It records the
+  masked bounds and raises a flag, so the (lossy) removal is auditable — a
+  masthead holds real metadata you may want to keep.
 
 ```python
 from ottoparse import Pipeline

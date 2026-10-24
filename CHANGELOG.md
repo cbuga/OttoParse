@@ -6,8 +6,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Focus: stained pages. The 0.2.0 default chain (CLAHE + Sauvola) turned stain
-outlines and paper folds into thick black contours running through the text.
+Nothing yet.
+
+## [0.3.0] — 2026-10-25
+
+Focus: real, stained Ottoman Turkish periodical scans. The 0.2.0 default chain
+(CLAHE + Sauvola) turned stain outlines and paper folds into thick black
+contours running through the text, deskew never ran on real pages, and faint
+foxing spots binarized into dots that read as nokta.
 
 ### Added
 
@@ -33,11 +39,15 @@ outlines and paper folds into thick black contours running through the text.
   strategy `"projection"`, and keeps `HoughDeskew`'s `max_angle` /
   `min_correction` semantics and flags.
 - A `periodical_page` test fixture: a rotated, real-like RGB page (yellowed
-  paper, stain, ragged dark margin, two columns of broken lines imitating Ottoman Turkish print
-  with dots, white rotation corners). Tests check that `ProjectionDeskew`
-  recovers the rotation and levels the page. A regression test on
-  `samples/1-*.jpg` runs when the private samples are present and skips
-  otherwise.
+  paper, stain, ragged dark margin, two columns of broken lines with dots
+  imitating Ottoman Turkish print, white rotation corners). Tests check that
+  `ProjectionDeskew` recovers the rotation and levels the page. A regression
+  test on `samples/1-*.jpg` runs when the private samples are present and
+  skips otherwise.
+- Foxing-filter tests: a faint spot beside text is removed, while dark text,
+  a faint elif, a faint rule, and faded text "under a stain" are kept (the
+  last also confirms a page-wide ink level would have lost it); plain mode and
+  parameter validation.
 
 ### Fixed
 
@@ -46,18 +56,18 @@ outlines and paper folds into thick black contours running through the text.
   `HoughLinesP` needs one unbroken edge segment of at least a quarter of the
   page width (~500 px). On two-column Ottoman Turkish (Perso-Arabic script)
   print, word gaps are wider than the 15 px dilation plus the 20 px
-  `maxLineGap`, so no line ever gets that long. The synthetic `cv2.putText` pages have continuous Latin baselines,
-  which hid this. The default chain now uses `ProjectionDeskew`, which
+  `maxLineGap`, so no line ever gets that long. The synthetic `cv2.putText`
+  pages have continuous Latin baselines, which hid this. The default chain now uses `ProjectionDeskew`, which
   estimates -0.40°, -0.85° and -0.10° on `samples/1-1`, `1-2` and `1-4` and
   recovers 3°/-5°/8° rotations of them to within ~0.4°. `HoughDeskew` is
   unchanged and still available.
 
 ### Changed
 
-- **Default image chain** is now deskew → `BackgroundNormalizer` → denoise →
-  `ConfidenceMap` → `OtsuBinarizer` → `ComponentFilter`. CLAHE is removed from
-  the default (still available as `ClaheEnhancer`), and Sauvola is replaced by
-  Otsu: once the background is flat a global threshold suffices and kept
+- **Default image chain** is now `ProjectionDeskew` → `BackgroundNormalizer` →
+  denoise → `ConfidenceMap` → `OtsuBinarizer` → `ComponentFilter`. CLAHE is
+  removed from the default (still available as `ClaheEnhancer`), and Sauvola
+  is replaced by Otsu: once the background is flat a global threshold suffices and kept
   strokes and dots more intact than Sauvola on the samples. On the three
   stained periodical samples the stain contours and fold lines disappeared and
   the ink fraction fell from ~7.6-8.6% to ~5.9-6.9% (the removed pixels were
@@ -70,7 +80,6 @@ outlines and paper folds into thick black contours running through the text.
 - Because the page is normalized before denoising, `NlMeansDenoiser`'s
   quality measurements now see flat paper; `BLEED_THROUGH` no longer fires on
   merely yellowed or stained paper.
-
 - **Foxing suppression in `OtsuBinarizer`** (on by default). On a flattened
   page Otsu's threshold sits high (~190-197 on the samples, because faded ink
   is only mid-gray), so faint foxing spots also fall below it. They came out
@@ -92,6 +101,8 @@ outlines and paper folds into thick black contours running through the text.
     page (foxing, stain blobs, pencil annotations, specks). The foxing dot
     above "سماوى" on 1-1 is removed; the stain-faded letters, rules and the
     dots checked near ش are kept.
+- Docs, comments and tests describe the material as Ottoman Turkish in
+  Perso-Arabic script rather than "Arabic script" (and use *nokta*, *elif*).
 
 ### Known limitations
 
