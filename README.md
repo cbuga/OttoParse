@@ -7,7 +7,7 @@ per-page records ready to hand to a downstream OCR/HTR stage (Phase 2). It does
 **not** perform OCR itself — its job is to route, clean, and normalize input, and
 to flag quality problems rather than silently drop them.
 
-## Scope (v0.1)
+## Scope (v0.2)
 
 This release implements **Phase 1 only**:
 
@@ -16,13 +16,19 @@ This release implements **Phase 1 only**:
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
 - **1.2 Deskewing & alignment** — correct page rotation.
 - **Contrast enhancement** — CLAHE (local, adaptive) on the grayscale to lift
-  faint text on degraded/stained print. In the default chain at a conservative
-  `clip_limit=2.0`.
+  faint text on degraded/stained print, at a conservative `clip_limit=2.0`.
 - **1.3 Denoising** — remove speckle and background noise.
+- **Confidence mapping** — flag faint/stained regions (non-destructive) so
+  downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
 - **1.4 Adaptive binarization** — Sauvola by default (best for degraded scans),
   with Otsu and adaptive-Gaussian available as swappable alternatives.
+- **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
+  blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
 
-The default image chain is **deskew → CLAHE → denoise → Sauvola**.
+The default image chain is
+**deskew → CLAHE → denoise → confidence map → Sauvola → component filter**.
+The cleaned grayscale is preserved alongside the binary image so faint text is
+never lost. Every step is swappable; pass an explicit `image_steps` to customize.
 
 Out of scope for now: Phase 2 (layout analysis, OCR/HTR engines) and Phase 3
 (lexicon resolution, tri-layer normalization, corpus packaging). The Phase 1
@@ -62,7 +68,8 @@ for rec in records:
 
 # Customized pipeline (this mirrors the default chain)
 from ottoparse.imaging import (
-    HoughDeskew, ClaheEnhancer, NlMeansDenoiser, SauvolaBinarizer,
+    HoughDeskew, ClaheEnhancer, NlMeansDenoiser,
+    ConfidenceMap, SauvolaBinarizer, ComponentFilter,
 )
 from ottoparse.intake import DefaultRouter
 
@@ -72,7 +79,9 @@ pipe = Pipeline(
         HoughDeskew(),
         ClaheEnhancer(clip_limit=2.0),
         NlMeansDenoiser(),
+        ConfidenceMap(),               # flag faint regions (on grayscale)
         SauvolaBinarizer(window_size=25),
+        ComponentFilter(),             # remove specks/blobs (on binary)
     ],
     write_images_to="out/",  # optional disk output
 )

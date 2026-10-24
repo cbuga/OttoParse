@@ -38,7 +38,8 @@ def test_process_plain_png(skewed_png):
     rec = records[0]
     assert rec.provenance.source_path is SourcePath.IMAGE
     assert [s.name for s in rec.history] == [
-        "deskew", "enhance_contrast", "denoise", "binarize",
+        "deskew", "enhance_contrast", "denoise",
+        "confidence_map", "binarize", "artifact_filter",
     ]
     assert not rec.has_errors
 
