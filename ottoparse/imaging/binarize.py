@@ -5,11 +5,11 @@ Three interchangeable strategies are provided; all share the same interface and
 all flag ``BINARIZATION_DEGENERATE`` if the result is nearly a single color
 (a sign the input or parameters were wrong).
 
-- :class:`SauvolaBinarizer` (default) — local adaptive thresholding. Best for
-  degraded historical scans with uneven lighting, staining, and faded ink,
-  because the threshold adapts to each neighbourhood.
-- :class:`OtsuBinarizer` — global thresholding. Fast; fine for clean, evenly
-  lit pages but poor on uneven backgrounds.
+- :class:`OtsuBinarizer` (default) — global thresholding. Fast; works well
+  once the background is flat, which is why the default chain runs
+  ``BackgroundNormalizer`` first. Poor on raw uneven backgrounds.
+- :class:`SauvolaBinarizer` — local adaptive thresholding for pages that were
+  not background-normalized. Its small window can mistake stain edges for ink.
 - :class:`AdaptiveGaussianBinarizer` — OpenCV mean/Gaussian adaptive threshold.
   A lighter-weight local method, a middle ground between the other two.
 
@@ -45,7 +45,7 @@ def _check_degenerate(binary: np.ndarray, record: PageRecord, step: str) -> None
 
 
 class SauvolaBinarizer:
-    """Local adaptive (Sauvola) binarization — the default for degraded scans.
+    """Local adaptive (Sauvola) binarization for non-normalized pages.
 
     Args:
         window_size: Odd side length of the local neighbourhood (pixels). Larger
@@ -73,7 +73,7 @@ class SauvolaBinarizer:
 
 
 class OtsuBinarizer:
-    """Global (Otsu) binarization — fast, best on clean evenly-lit pages."""
+    """Global (Otsu) binarization — the default, after background normalization."""
 
     name = "binarize"
 

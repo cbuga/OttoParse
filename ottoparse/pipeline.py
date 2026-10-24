@@ -19,11 +19,11 @@ from pathlib import Path
 from ottoparse.core.config import PipelineConfig
 from ottoparse.core.strategy import ImageStep, PageRouter
 from ottoparse.imaging.artifacts import ComponentFilter
-from ottoparse.imaging.binarize import SauvolaBinarizer
+from ottoparse.imaging.background import BackgroundNormalizer
+from ottoparse.imaging.binarize import OtsuBinarizer
 from ottoparse.imaging.confidence import ConfidenceMap
 from ottoparse.imaging.denoise import NlMeansDenoiser
 from ottoparse.imaging.deskew import HoughDeskew
-from ottoparse.imaging.enhance import ClaheEnhancer
 from ottoparse.imaging.pipeline import run_image_steps
 from ottoparse.intake.pdf_text import extract_page_text, normalize_text
 from ottoparse.intake.rasterize import rasterize_page
@@ -36,23 +36,26 @@ from ottoparse.model.record import PageRecord, Provenance, SourcePath
 def default_image_steps() -> list[ImageStep]:
     """The default Phase 1 image-cleanup chain.
 
-    Order: deskew -> CLAHE -> denoise -> confidence map -> Sauvola -> component
-    filter.
+    Order: deskew -> background normalization -> denoise -> confidence map ->
+    Otsu -> component filter.
 
-    - CLAHE (``clip_limit=2.0``) lifts faint text on degraded/stained print
-      before binarization.
+    - ``BackgroundNormalizer`` divides the page by its estimated paper tone, so
+      stains and uneven lighting flatten to white while ink keeps its contrast.
+      This replaces CLAHE, which amplified stain edges into black contours.
+    - Once the background is flat a single global threshold suffices, so Otsu
+      is used; it keeps strokes and dots intact better than Sauvola here.
     - ``ConfidenceMap`` runs on the cleaned **grayscale** (before binarization,
       where contrast is still meaningful) to flag faint/stained regions for
       downstream reconstruction — it deletes nothing.
     - ``ComponentFilter`` runs **after** binarization to strip the ghost specks
-      that CLAHE/denoise leave behind (it needs a binary image).
+      left after thresholding (it needs a binary image).
     """
     return [
         HoughDeskew(),
-        ClaheEnhancer(clip_limit=2.0),
+        BackgroundNormalizer(),
         NlMeansDenoiser(),
         ConfidenceMap(),
-        SauvolaBinarizer(),
+        OtsuBinarizer(),
         ComponentFilter(),
     ]
 
@@ -63,7 +66,7 @@ class Pipeline:
     Args:
         router: Per-page text-vs-image router. Defaults to :class:`DefaultRouter`.
         image_steps: Ordered image-cleanup steps. Defaults to
-            deskew -> denoise -> Sauvola binarization.
+            :func:`default_image_steps`.
         rasterize_dpi: DPI for rendering image-only PDF pages.
         write_images_to: If set, cleaned images are written here and each
             record's ``image_path`` is populated.
@@ -156,7 +159,9 @@ class Pipeline:
             provenance=Provenance(path, page_index, SourcePath.IMAGE, reason)
         )
         try:
-            image = rasterize_page(page, dpi=self.config.rasterize_dpi, grayscale=True)
+            # Rasterize in color: stains and ink differ in hue, and color-aware
+            # steps (e.g. BackgroundNormalizer(channel="blue")) need the channels.
+            image = rasterize_page(page, dpi=self.config.rasterize_dpi, grayscale=False)
         except Exception as exc:  # noqa: BLE001
             rec.add_flag(
                 FlagCode.UNREADABLE_PAGE, Severity.ERROR,

@@ -1,6 +1,7 @@
 """Imaging: deskew, denoise, and adaptive binarization (Phase 1.2-1.4)."""
 
 from ottoparse.imaging.artifacts import ComponentFilter, RegionMask
+from ottoparse.imaging.background import BackgroundNormalizer
 from ottoparse.imaging.binarize import (
     AdaptiveGaussianBinarizer,
     OtsuBinarizer,
@@ -23,6 +24,7 @@ __all__ = [
     "RegionMask",
     "ConfidenceMap",
     "ClaheEnhancer",
+    "BackgroundNormalizer",
     "run_image_steps",
     "to_grayscale",
 ]
