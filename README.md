@@ -7,7 +7,7 @@ per-page records ready to hand to a downstream OCR/HTR stage (Phase 2). It does
 **not** perform OCR itself — its job is to route, clean, and normalize input, and
 to flag quality problems rather than silently drop them.
 
-## Scope (v0.1)
+## Scope (v0.2)
 
 This release implements **Phase 1 only**:
 
@@ -15,9 +15,20 @@ This release implements **Phase 1 only**:
   usable text layer (extract it) or is image-only (rasterize and clean it).
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
 - **1.2 Deskewing & alignment** — correct page rotation.
+- **Contrast enhancement** — CLAHE (local, adaptive) on the grayscale to lift
+  faint text on degraded/stained print, at a conservative `clip_limit=2.0`.
 - **1.3 Denoising** — remove speckle and background noise.
+- **Confidence mapping** — flag faint/stained regions (non-destructive) so
+  downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
 - **1.4 Adaptive binarization** — Sauvola by default (best for degraded scans),
   with Otsu and adaptive-Gaussian available as swappable alternatives.
+- **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
+  blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
+
+The default image chain is
+**deskew → CLAHE → denoise → confidence map → Sauvola → component filter**.
+The cleaned grayscale is preserved alongside the binary image so faint text is
+never lost. Every step is swappable; pass an explicit `image_steps` to customize.
 
 Out of scope for now: Phase 2 (layout analysis, OCR/HTR engines) and Phase 3
 (lexicon resolution, tri-layer normalization, corpus packaging). The Phase 1
@@ -55,17 +66,50 @@ records = Pipeline().process("archive_scan.pdf")
 for rec in records:
     print(rec.provenance.page_index, rec.provenance.source_path, rec.flags)
 
-# Customized pipeline
-from ottoparse.imaging import HoughDeskew, NlMeansDenoiser, SauvolaBinarizer
+# Customized pipeline (this mirrors the default chain)
+from ottoparse.imaging import (
+    HoughDeskew, ClaheEnhancer, NlMeansDenoiser,
+    ConfidenceMap, SauvolaBinarizer, ComponentFilter,
+)
 from ottoparse.intake import DefaultRouter
 
 pipe = Pipeline(
     router=DefaultRouter(min_chars=50),
-    image_steps=[HoughDeskew(), NlMeansDenoiser(), SauvolaBinarizer(window_size=25)],
+    image_steps=[
+        HoughDeskew(),
+        ClaheEnhancer(clip_limit=2.0),
+        NlMeansDenoiser(),
+        ConfidenceMap(),               # flag faint regions (on grayscale)
+        SauvolaBinarizer(window_size=25),
+        ComponentFilter(),             # remove specks/blobs (on binary)
+    ],
     write_images_to="out/",  # optional disk output
 )
 records = pipe.process("archive_scan.pdf")
 ```
+
+## Contrast enhancement (CLAHE)
+
+Degraded historical paper has wildly uneven text-to-background contrast: crisp
+in clean areas, almost none where a stain or foxing darkens the page. A single
+global stretch cannot fix that. `ClaheEnhancer` applies OpenCV's CLAHE (Contrast
+Limited Adaptive Histogram Equalization) to the grayscale, equalizing contrast
+in local tiles so each region — including a stained patch — gets its own stretch
+and faint ink is pulled apart from its background.
+
+It runs **on the grayscale, before denoise and binarization**, and is part of
+the default chain at a conservative `clip_limit=2.0`. The clip limit caps local
+amplification: higher values recover more faint text but amplify more speckle,
+foxing, and bleed-through, so raise it only as far as a given corpus tolerates.
+
+```python
+from ottoparse.imaging import ClaheEnhancer
+
+ClaheEnhancer(clip_limit=2.0, tile_grid_size=(8, 8))  # defaults
+```
+
+To disable it (e.g. for already-clean scans where CLAHE adds background
+texture), pass an explicit `image_steps` list without `ClaheEnhancer`.
 
 ## Degraded pages: preserving faint text
 
