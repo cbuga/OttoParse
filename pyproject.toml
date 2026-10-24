@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ottoparse"
-version = "0.2.0"
+version = "0.3.0"
 description = "Phase 1 intake & pre-processing for late-Ottoman printed (Matbu) documents: routing, deskewing, denoising, and adaptive binarization, plus deterministic PDF text extraction."
 readme = "README.md"
 requires-python = ">=3.13"
