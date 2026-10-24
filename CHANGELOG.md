@@ -6,7 +6,78 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+Focus: stained pages. The 0.2.0 default chain (CLAHE + Sauvola) turned stain
+outlines and paper folds into thick black contours running through the text.
+
+### Added
+
+- Background normalization (`ottoparse/imaging/background.py`),
+  `BackgroundNormalizer` — estimates the paper tone with a grayscale
+  morphological closing (disk wider than any stroke) plus Gaussian blur, and
+  divides the page by it. Stains, foxing, and uneven lighting flatten to white
+  while ink keeps its contrast, including inside a stain.
+  - `channel`: `"luminance"` (default), `"red"`, `"green"`, or `"blue"`.
+  - `kernel_size`: automatic by default (~2% of the page's shorter side,
+    ~41 px at 300 DPI); `blur_sigma` defaults to `kernel_size / 5`.
+  - Logs the channel actually used (`"gray"` for single-channel input) and the
+    resolved kernel to the processing history.
+- `tests/test_background.py` — synthetic stain flattening, stain-outline
+  suppression vs. raw Sauvola, channel selection, auto kernel, validation.
+- Projection-profile deskew (`ottoparse/imaging/deskew.py`), `ProjectionDeskew`
+  — searches +/-2x `max_angle` (coarse 0.5°, then fine 0.05°) for the rotation
+  that maximizes the sharpness (sum of squared row-to-row differences) of the
+  horizontal ink profile. It estimates on a ~1200 px working copy, flattened
+  with `BackgroundNormalizer`'s background estimate before Otsu, and keeps only
+  glyph-sized connected components. That way yellowed paper, stains, dark scan
+  margins and column rules don't steer it. Takes ~30 ms per page, logs
+  strategy `"projection"`, and keeps `HoughDeskew`'s `max_angle` /
+  `min_correction` semantics and flags.
+- A `periodical_page` test fixture: a rotated, real-like RGB page (yellowed
+  paper, stain, ragged dark margin, two columns of broken Arabic-like lines
+  with dots, white rotation corners). Tests check that `ProjectionDeskew`
+  recovers the rotation and levels the page. A regression test on
+  `samples/1-*.jpg` runs when the private samples are present and skips
+  otherwise.
+
+### Fixed
+
+- Deskew never ran on real input. `HoughDeskew` flagged `SKEW_UNDETECTED`
+  ("no near-horizontal lines found") on every real periodical sample.
+  `HoughLinesP` needs one unbroken edge segment of at least a quarter of the
+  page width (~500 px). On two-column Arabic-script print, word gaps are wider
+  than the 15 px dilation plus the 20 px `maxLineGap`, so no line ever gets
+  that long. The synthetic `cv2.putText` pages have continuous Latin baselines,
+  which hid this. The default chain now uses `ProjectionDeskew`, which
+  estimates -0.40°, -0.85° and -0.10° on `samples/1-1`, `1-2` and `1-4` and
+  recovers 3°/-5°/8° rotations of them to within ~0.4°. `HoughDeskew` is
+  unchanged and still available.
+
+### Changed
+
+- **Default image chain** is now deskew → `BackgroundNormalizer` → denoise →
+  `ConfidenceMap` → `OtsuBinarizer` → `ComponentFilter`. CLAHE is removed from
+  the default (still available as `ClaheEnhancer`), and Sauvola is replaced by
+  Otsu: once the background is flat a global threshold suffices and kept
+  strokes and dots more intact than Sauvola on the samples. On the three
+  stained periodical samples the stain contours and fold lines disappeared and
+  the ink fraction fell from ~7.6-8.6% to ~5.9-6.9% (the removed pixels were
+  stain edges, not text).
+- PDF image-only pages are rasterized in **RGB** instead of grayscale, so
+  color-aware steps can use the channels. Steps that need grayscale still
+  convert internally.
+- `record.gray` with the default chain is now the background-normalized
+  grayscale.
+- Because the page is normalized before denoising, `NlMeansDenoiser`'s
+  quality measurements now see flat paper; `BLEED_THROUGH` no longer fires on
+  merely yellowed or stained paper.
+
+### Known limitations
+
+- Solid dark areas wider than the normalization kernel (large calligraphic
+  mastheads, filled illustrations) come out hollow; raise `kernel_size` if
+  that matters.
+- The darkest core of a heavy stain can still leave a small blob after
+  thresholding.
 
 ## [0.2.0] — 2026-10-17
 

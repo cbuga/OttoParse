@@ -14,19 +14,25 @@ This release implements **Phase 1 only**:
 - **1.1 Document routing** — per *page*, decide whether a PDF page already has a
   usable text layer (extract it) or is image-only (rasterize and clean it).
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
-- **1.2 Deskewing & alignment** — correct page rotation.
-- **Contrast enhancement** — CLAHE (local, adaptive) on the grayscale to lift
-  faint text on degraded/stained print, at a conservative `clip_limit=2.0`.
+- **1.2 Deskewing & alignment** — correct page rotation. `ProjectionDeskew`
+  (default) picks the angle that makes the row ink profile sharpest, which
+  works on Arabic-script print; `HoughDeskew` (long baselines) remains
+  available for Latin print.
+- **Background normalization** — divide the page by its estimated paper tone
+  so stains, foxing, and uneven lighting flatten to white while ink keeps its
+  contrast. (CLAHE remains available as an opt-in alternative.)
 - **1.3 Denoising** — remove speckle and background noise.
 - **Confidence mapping** — flag faint/stained regions (non-destructive) so
   downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
-- **1.4 Adaptive binarization** — Sauvola by default (best for degraded scans),
-  with Otsu and adaptive-Gaussian available as swappable alternatives.
+- **1.4 Binarization** — Otsu by default (a global threshold is enough once
+  the background is flat), with Sauvola and adaptive-Gaussian available as
+  swappable alternatives.
 - **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
   blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
 
 The default image chain is
-**deskew → CLAHE → denoise → confidence map → Sauvola → component filter**.
+**deskew → background normalization → denoise → confidence map → Otsu →
+component filter**.
 The cleaned grayscale is preserved alongside the binary image so faint text is
 never lost. Every step is swappable; pass an explicit `image_steps` to customize.
 
@@ -68,19 +74,19 @@ for rec in records:
 
 # Customized pipeline (this mirrors the default chain)
 from ottoparse.imaging import (
-    HoughDeskew, ClaheEnhancer, NlMeansDenoiser,
-    ConfidenceMap, SauvolaBinarizer, ComponentFilter,
+    ProjectionDeskew, BackgroundNormalizer, NlMeansDenoiser,
+    ConfidenceMap, OtsuBinarizer, ComponentFilter,
 )
 from ottoparse.intake import DefaultRouter
 
 pipe = Pipeline(
     router=DefaultRouter(min_chars=50),
     image_steps=[
-        HoughDeskew(),
-        ClaheEnhancer(clip_limit=2.0),
+        ProjectionDeskew(),
+        BackgroundNormalizer(),        # flatten stains / uneven paper
         NlMeansDenoiser(),
         ConfidenceMap(),               # flag faint regions (on grayscale)
-        SauvolaBinarizer(window_size=25),
+        OtsuBinarizer(),
         ComponentFilter(),             # remove specks/blobs (on binary)
     ],
     write_images_to="out/",  # optional disk output
@@ -88,7 +94,41 @@ pipe = Pipeline(
 records = pipe.process("archive_scan.pdf")
 ```
 
-## Contrast enhancement (CLAHE)
+## Background normalization (stains & uneven paper)
+
+A stain darkens the paper *multiplicatively* — the paper and the ink under a
+blot are dimmed by about the same factor. A local thresholder like Sauvola sees
+the edge between clean and stained paper as a sharp brightness step and marks
+it as ink, so stain outlines come out as thick black contours through the text.
+
+`BackgroundNormalizer` undoes the darkening instead: it estimates the paper tone
+under every pixel (a grayscale morphological closing with a disk wider than any
+text stroke, then a Gaussian blur) and divides the page by it. Clean and stained
+paper both become near-white; ink keeps its contrast relative to its *own*
+background, including inside a stain. After this, a global Otsu threshold is
+enough. On the stained periodical samples this removed the stain contours and
+fold lines that the previous CLAHE + Sauvola chain produced.
+
+```python
+from ottoparse.imaging import BackgroundNormalizer
+
+BackgroundNormalizer()                   # luminance, auto kernel (~2% of page side)
+BackgroundNormalizer(channel="blue")     # use the blue channel of a color scan
+BackgroundNormalizer(kernel_size=41)     # fixed kernel (odd, wider than strokes)
+```
+
+- **`channel`** — `"luminance"` (default), `"red"`, `"green"`, or `"blue"`.
+  Yellow/brown stains are closer to paper in blue, but on the samples tested
+  luminance gave equal or cleaner results (the blue channel of a JPEG is
+  noisier). Image files and PDF pages are now kept in color until this step, so
+  either choice works; grayscale input uses its single channel.
+- **`kernel_size`** — must exceed the widest text stroke. The automatic value
+  (~41 px on a 300 DPI page) suits periodical body text.
+- **Limitation:** solid dark areas *wider* than the kernel (large calligraphic
+  mastheads, filled illustrations, thick bars) are treated as background and
+  come out hollow or blank. Use a larger `kernel_size` if that matters.
+
+## Contrast enhancement (CLAHE, opt-in)
 
 Degraded historical paper has wildly uneven text-to-background contrast: crisp
 in clean areas, almost none where a stain or foxing darkens the page. A single
@@ -97,8 +137,10 @@ Limited Adaptive Histogram Equalization) to the grayscale, equalizing contrast
 in local tiles so each region — including a stained patch — gets its own stretch
 and faint ink is pulled apart from its background.
 
-It runs **on the grayscale, before denoise and binarization**, and is part of
-the default chain at a conservative `clip_limit=2.0`. The clip limit caps local
+It runs **on the grayscale, before denoise and binarization**. It is no longer
+in the default chain: on stained pages it amplifies stain edges, which Sauvola
+then turns into black contours — `BackgroundNormalizer` handles that case
+better. Use it as an alternative, e.g. on evenly lit but faded scans. The clip limit caps local
 amplification: higher values recover more faint text but amplify more speckle,
 foxing, and bleed-through, so raise it only as far as a given corpus tolerates.
 
@@ -108,8 +150,8 @@ from ottoparse.imaging import ClaheEnhancer
 ClaheEnhancer(clip_limit=2.0, tile_grid_size=(8, 8))  # defaults
 ```
 
-To disable it (e.g. for already-clean scans where CLAHE adds background
-texture), pass an explicit `image_steps` list without `ClaheEnhancer`.
+To use it, pass an explicit `image_steps` list with `ClaheEnhancer` in place of
+`BackgroundNormalizer`.
 
 ## Degraded pages: preserving faint text
 
@@ -123,8 +165,10 @@ does **not** treat the binary image as the only output.
   with all tonal information intact). When writing to disk, a companion
   `{stem}_gray.png` is saved next to the binary `{stem}.png`. A downstream
   OCR/HTR engine or lexicon/language-model stage can mine the grayscale to
-  recover glyphs the binary view dropped.
-- **Low-confidence regions are flagged, not deleted.** The opt-in `ConfidenceMap`
+  recover glyphs the binary view dropped. With the default chain this is the
+  *background-normalized* grayscale (stains flattened, ink contrast kept),
+  which many HTR engines accept directly.
+- **Low-confidence regions are flagged, not deleted.** The `ConfidenceMap`
   step marks faint/stained areas as `Region`s (with a 0-1 confidence score and a
   `LOW_CONFIDENCE_REGION` flag) without altering a single pixel, so later stages
   know where to look and can reconstruct contextually.
@@ -132,11 +176,11 @@ does **not** treat the binary image as the only output.
 ```python
 from ottoparse import Pipeline
 from ottoparse.imaging import (
-    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
+    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
 )
 
 pipe = Pipeline(image_steps=[
-    HoughDeskew(),
+    ProjectionDeskew(),
     NlMeansDenoiser(),
     ConfidenceMap(),        # flag faint/stained regions on grayscale; deletes nothing
     SauvolaBinarizer(),
@@ -176,13 +220,13 @@ this (both off by default, since they are layout-specific and lossy):
 ```python
 from ottoparse import Pipeline
 from ottoparse.imaging import (
-    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
+    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
 )
 
 # Clean a periodical front page: strip specks/blobs page-wide, then mask the
 # top masthead band that holds the seal, watermark, and editorial stamp.
 pipe = Pipeline(image_steps=[
-    HoughDeskew(),
+    ProjectionDeskew(),
     NlMeansDenoiser(),
     SauvolaBinarizer(),
     ComponentFilter(),       # remove specks and solid blobs (stamps, blots)
