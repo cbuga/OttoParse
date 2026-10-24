@@ -1,6 +1,7 @@
 # OttoParse
 
-Phase 1 intake & pre-processing for late-Ottoman **printed (Matbu)** documents.
+Phase 1 intake & pre-processing for late-Ottoman **printed (Matbu)** documents
+in Ottoman Turkish (Perso-Arabic script).
 
 OttoParse ingests degraded archival scans and encoded PDFs and produces clean,
 per-page records ready to hand to a downstream OCR/HTR stage (Phase 2). It does
@@ -25,17 +26,18 @@ This release implements **Phase 1 only**:
 - **Confidence mapping** — flag faint/stained regions (non-destructive) so
   downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
 - **1.4 Binarization** — Otsu by default (a global threshold is enough once
-  the background is flat), with Sauvola and adaptive-Gaussian available as
-  swappable alternatives. Otsu drops faint stand-alone marks with no dark ink
+  the background is flat). Otsu drops faint stand-alone marks with no dark ink
   core, such as foxing spots that would otherwise read as dots
-  (`core_contrast=None` turns this off).
+  (`core_contrast=None` turns this off). Sauvola and adaptive-Gaussian remain
+  available as alternatives, for pages that are not background-normalized or
+  as comparison baselines.
 - **Artifact removal** — `ComponentFilter` (default) strips ghost specks and
   solid blobs (stamps, seals, ink blots) after binarization; `RegionMask`
   (opt-in) blanks masthead bands.
 
-The default image chain is
-**deskew → background normalization → denoise → confidence map → Otsu →
-component filter**.
+The default image chain (`ottoparse.default_image_steps()`) is
+**`ProjectionDeskew` → `BackgroundNormalizer` → `NlMeansDenoiser` →
+`ConfidenceMap` → `OtsuBinarizer` → `ComponentFilter`**.
 The cleaned grayscale is preserved alongside the binary image so faint text is
 never lost. Every step is swappable; pass an explicit `image_steps` to customize.
 
@@ -182,6 +184,34 @@ The step logs `removed_faint` (the number of marks removed) in the processing
 history. If real nokta, hemze or medde go missing on a corpus, lower
 `core_contrast`; the preserved grayscale (`record.gray`) still has every mark.
 
+## Alternative binarizers
+
+`OtsuBinarizer` is the default because it works once `BackgroundNormalizer`
+has flattened the page. Two local thresholders stay available:
+
+- **`SauvolaBinarizer`** (`window_size=25`, `k=0.2`) — a per-pixel threshold
+  from the local mean and spread. Use it for pages you do not
+  background-normalize. On stained pages its small window treats stain edges
+  as ink.
+- **`AdaptiveGaussianBinarizer`** (`block_size=31`, `c=10`) — OpenCV's
+  adaptive Gaussian threshold; a lighter local method.
+
+Neither has the foxing filter, so they are also useful as baselines when
+comparing binarization methods:
+
+```python
+from ottoparse import Pipeline
+from ottoparse.imaging import (
+    ProjectionDeskew, NlMeansDenoiser, ConfidenceMap, SauvolaBinarizer, ComponentFilter,
+)
+
+# The pre-0.3.0 style chain: no background normalization, Sauvola instead of Otsu.
+baseline = Pipeline(image_steps=[
+    ProjectionDeskew(), NlMeansDenoiser(), ConfidenceMap(),
+    SauvolaBinarizer(), ComponentFilter(),
+])
+```
+
 ## Contrast enhancement (CLAHE, opt-in)
 
 Degraded historical paper has wildly uneven text-to-background contrast: crisp
@@ -227,18 +257,12 @@ does **not** treat the binary image as the only output.
   `LOW_CONFIDENCE_REGION` flag) without altering a single pixel, so later stages
   know where to look and can reconstruct contextually.
 
+Both are part of the default chain:
+
 ```python
 from ottoparse import Pipeline
-from ottoparse.imaging import (
-    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
-)
 
-pipe = Pipeline(image_steps=[
-    ProjectionDeskew(),
-    NlMeansDenoiser(),
-    ConfidenceMap(),        # flag faint/stained regions on grayscale; deletes nothing
-    SauvolaBinarizer(),
-], write_images_to="out/")  # also writes out/<name>_gray.png per page
+pipe = Pipeline(write_images_to="out/")  # also writes out/<name>_gray.png per page
 
 rec = pipe.process("samples/1-1.jpg")[0]
 rec.gray          # lossless grayscale (ndarray)
@@ -272,18 +296,14 @@ binarization and pollutes line serialization. Two image steps address this:
   masthead holds real metadata you may want to keep.
 
 ```python
-from ottoparse import Pipeline
-from ottoparse.imaging import (
-    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
-)
+from ottoparse import Pipeline, default_image_steps
+from ottoparse.imaging import RegionMask
 
-# Clean a periodical front page: strip specks/blobs page-wide, then mask the
-# top masthead band that holds the seal, watermark, and editorial stamp.
+# Clean a periodical front page: the default chain (which already ends with
+# ComponentFilter), then mask the top masthead band that holds the seal,
+# watermark, and editorial stamp.
 pipe = Pipeline(image_steps=[
-    ProjectionDeskew(),
-    NlMeansDenoiser(),
-    SauvolaBinarizer(),
-    ComponentFilter(),       # remove specks and solid blobs (stamps, blots)
+    *default_image_steps(),
     RegionMask(top=0.22),    # suppress the masthead band (tune per layout)
 ])
 records = pipe.process("samples/1-1.jpg")
@@ -292,6 +312,24 @@ records = pipe.process("samples/1-1.jpg")
 Order matters: `ComponentFilter` must come **after** binarization (it needs a
 binary image), and `RegionMask` is typically last. The `top` fraction is
 layout-specific — tune it on your own scans.
+
+## Project layout
+
+```text
+ottoparse/
+  pipeline.py        Pipeline orchestrator and default_image_steps()
+  io.py              image loading/writing, supported extensions
+  core/              ImageStep / PageRouter protocols, PipelineConfig
+  model/             PageRecord, Provenance, ProcessingStep, Region, IssueFlag
+  intake/            per-page routing, PDF text extraction, rasterization,
+                     Perso-Arabic script heuristic
+  imaging/           deskew, background normalization, CLAHE, denoise,
+                     confidence map, binarizers, artifact removal
+tests/               pytest suite (synthetic inputs; sample tests skip
+                     when samples/ is absent)
+docs/                design notes (e.g. tri-level thresholding plan review)
+run_ottoparse.py     command-line runner for manual testing
+```
 
 ## Manual testing
 
@@ -320,7 +358,7 @@ Supported inputs: PDF, and images (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`,
 
 | Flag | Description |
 |------|-------------|
-| `--any-script` | Accept text layers of any script. Use this for Latin / non-Arabic test PDFs; otherwise their text pages are flagged *suspect* and routed to the image path. Leave off for real Ottoman documents. |
+| `--any-script` | Accept text layers of any script. Use this for Latin / non-Perso-Arabic test PDFs; otherwise their text pages are flagged *suspect* and routed to the image path. Leave off for real Ottoman documents. |
 | `--out DIR` | Directory for cleaned images (default: `results/`). |
 | `--dpi N` | Rasterization DPI for image-only PDF pages (default: 300). |
 | `--json` | Also print each page record as JSON (the full Phase 2 hand-off object). |
@@ -331,8 +369,9 @@ Supported inputs: PDF, and images (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`,
 ```
 
 Note: the default router is tuned for Perso-Arabic text layers. A real Ottoman
-PDF with an Arabic text layer keeps its text when run without `--any-script`; a
-Latin-script test PDF needs `--any-script` or its text pages will be rasterized.
+PDF with a Perso-Arabic text layer keeps its text when run without
+`--any-script`; a Latin-script test PDF needs `--any-script` or its text pages
+will be rasterized.
 
 ## Running the tests
 
@@ -340,6 +379,10 @@ Latin-script test PDF needs `--any-script` or its text pages will be rasterized.
 .venv/bin/pytest          # run the full suite
 .venv/bin/ruff check .    # lint
 ```
+
+The suite builds its inputs synthetically. A few regression tests run on the
+private scans `samples/1-*.jpg` when they are present and are skipped
+otherwise.
 
 ## Changelog
 
