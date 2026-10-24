@@ -21,7 +21,7 @@ from ottoparse.model.record import (
 )
 from ottoparse.pipeline import Pipeline, default_image_steps
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "Pipeline",
