@@ -40,7 +40,7 @@ def default_image_steps() -> list[ImageStep]:
     Otsu -> component filter.
 
     - ``ProjectionDeskew`` estimates skew from the sharpness of the row ink
-      profile; ``HoughDeskew`` finds no long baselines on Arabic-script print.
+      profile; ``HoughDeskew`` finds no long baselines on Ottoman Turkish print.
     - ``BackgroundNormalizer`` divides the page by its estimated paper tone, so
       stains and uneven lighting flatten to white while ink keeps its contrast.
       This replaces CLAHE, which amplified stain edges into black contours.

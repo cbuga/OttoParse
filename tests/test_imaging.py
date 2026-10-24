@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
@@ -64,7 +65,7 @@ def test_projection_deskew_estimates_skew(text_image, angle):
 @pytest.mark.parametrize("angle", [4.0, -3.0, 7.0])
 def test_projection_deskew_on_rotated_periodical_page(periodical_page, angle):
     # Yellowed RGB paper, stain, dark margin, white rotation corners, and
-    # broken Arabic-like lines: the estimate must still recover the rotation.
+    # broken Ottoman-like lines: the estimate must still recover the rotation.
     rec = _record()
     page = periodical_page(angle=angle)
     est = ProjectionDeskew().estimate_angle(to_grayscale(page))
@@ -118,6 +119,58 @@ def test_binarizers_produce_binary(text_image, binarizer):
     uniq = np.unique(out)
     assert set(uniq.tolist()).issubset({0, 255})
     assert out.dtype == np.uint8
+
+
+def _foxed_page() -> np.ndarray:
+    """A flattened page: dark text, a faint foxing spot beside it, a faint elif."""
+    page = np.full((300, 400), 245, np.uint8)
+    for y in range(60, 260, 40):
+        cv2.putText(page, "matbu line", (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 60, 2)
+    cv2.circle(page, (230, 45), 5, 130, -1)   # foxing spot just above a line
+    page[150:190, 300:302] = 130              # thin, faint upright stroke
+    page[280:282, 220:330] = 130              # thin, faint printed rule
+    return page
+
+
+def test_otsu_drops_faint_foxing_keeps_text_and_upright_strokes():
+    rec = _record()
+    page = _foxed_page()
+    out = OtsuBinarizer().apply(page, rec)
+    assert (out[40:51, 225:236] == 255).all()        # foxing spot removed
+    assert (out[150:190, 300:302] == 0).mean() > 0.9  # faint elif kept
+    assert (out[280:282, 220:330] == 0).mean() > 0.9  # faint rule kept
+    assert (out[page == 60] == 0).mean() > 0.99       # text kept
+    step = next(s for s in rec.history if s.name == "binarize")
+    assert step.strategy == "otsu_hysteresis"
+    assert step.params["removed_faint"] >= 1
+
+
+def test_otsu_keeps_faded_text_under_a_stain():
+    # Left half: dark print. Right half: the same print faded, as ink under a
+    # stain stays after background normalization. A page-wide ink level would
+    # treat the faded letters as foxing; the local level must keep them.
+    page = np.full((300, 600), 245, np.uint8)
+    for y in range(40, 290, 30):
+        cv2.putText(page, "matbu matbu", (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 60, 2)
+        cv2.putText(page, "matbu matbu", (310, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 125, 2)
+    out = OtsuBinarizer().apply(page, _record())
+    global_out = OtsuBinarizer(window=10_000).apply(page, _record())
+    faded = page == 125
+    assert (global_out[faded] == 0).mean() < 0.5  # the old page-wide rule lost them
+    assert (out[faded] == 0).mean() > 0.95
+
+
+def test_otsu_plain_mode_keeps_foxing():
+    out = OtsuBinarizer(core_contrast=None).apply(_foxed_page(), _record())
+    assert (out[40:51, 225:236] == 0).any()
+
+
+@pytest.mark.parametrize("kwargs", [{"core_contrast": 0.0}, {"core_contrast": 1.0},
+                                    {"upright_aspect": 0}, {"rule_aspect": 0},
+                                    {"window": 4}])
+def test_otsu_rejects_bad_params(kwargs):
+    with pytest.raises(ValueError):
+        OtsuBinarizer(**kwargs)
 
 
 def test_sauvola_rejects_even_window():

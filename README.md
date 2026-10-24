@@ -16,7 +16,7 @@ This release implements **Phase 1 only**:
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
 - **1.2 Deskewing & alignment** — correct page rotation. `ProjectionDeskew`
   (default) picks the angle that makes the row ink profile sharpest, which
-  works on Arabic-script print; `HoughDeskew` (long baselines) remains
+  works on Ottoman Turkish (Perso-Arabic script) print; `HoughDeskew` (long baselines) remains
   available for Latin print.
 - **Background normalization** — divide the page by its estimated paper tone
   so stains, foxing, and uneven lighting flatten to white while ink keeps its
@@ -26,7 +26,9 @@ This release implements **Phase 1 only**:
   downstream stages can reconstruct ambiguous glyphs; nothing is deleted.
 - **1.4 Binarization** — Otsu by default (a global threshold is enough once
   the background is flat), with Sauvola and adaptive-Gaussian available as
-  swappable alternatives.
+  swappable alternatives. Otsu drops faint stand-alone marks with no dark ink
+  core, such as foxing spots that would otherwise read as dots
+  (`core_contrast=None` turns this off).
 - **Artifact removal** — strip ghost specks and solid blobs (stamps, seals, ink
   blots) after binarization; `RegionMask` (opt-in) blanks masthead bands.
 

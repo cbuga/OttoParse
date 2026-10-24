@@ -39,7 +39,7 @@ class ComponentFilter:
     - **blobs**: area >= ``max_area`` pixels AND ``fill_ratio`` >= ``blob_fill``,
       where fill_ratio is the component's pixel count divided by its bounding-box
       area. Stamps, seals and ink blots are large and densely filled; text —
-      even dense Arabic — rarely fills its bounding box so solidly at large size.
+      even dense Ottoman print — rarely fills its bounding box so solidly at large size.
 
     Thresholds are defaulted from analysis of a real periodical scan but are
     meant to be tuned per corpus. All removals are counted into the record.

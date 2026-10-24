@@ -11,7 +11,7 @@ the estimator.
   a background-flattened, downscaled copy and keeps only glyph-sized connected
   components, so yellowed paper, stains, dark scan margins, and column rules do
   not steer the estimate. It needs no long straight segments, which is what
-  Arabic-script print lacks.
+  Ottoman Turkish print in Perso-Arabic script lacks.
 - :class:`HoughDeskew` takes the median angle of long near-horizontal segments
   found by the probabilistic Hough transform. It suits Latin print with
   continuous baselines, but on late-Ottoman periodicals it finds no segment
