@@ -14,7 +14,10 @@ This release implements **Phase 1 only**:
 - **1.1 Document routing** — per *page*, decide whether a PDF page already has a
   usable text layer (extract it) or is image-only (rasterize and clean it).
 - **PDF text path** — deterministic extraction via PyMuPDF + regex normalization.
-- **1.2 Deskewing & alignment** — correct page rotation.
+- **1.2 Deskewing & alignment** — correct page rotation. `ProjectionDeskew`
+  (default) picks the angle that makes the row ink profile sharpest, which
+  works on Arabic-script print; `HoughDeskew` (long baselines) remains
+  available for Latin print.
 - **Background normalization** — divide the page by its estimated paper tone
   so stains, foxing, and uneven lighting flatten to white while ink keeps its
   contrast. (CLAHE remains available as an opt-in alternative.)
@@ -71,7 +74,7 @@ for rec in records:
 
 # Customized pipeline (this mirrors the default chain)
 from ottoparse.imaging import (
-    HoughDeskew, BackgroundNormalizer, NlMeansDenoiser,
+    ProjectionDeskew, BackgroundNormalizer, NlMeansDenoiser,
     ConfidenceMap, OtsuBinarizer, ComponentFilter,
 )
 from ottoparse.intake import DefaultRouter
@@ -79,7 +82,7 @@ from ottoparse.intake import DefaultRouter
 pipe = Pipeline(
     router=DefaultRouter(min_chars=50),
     image_steps=[
-        HoughDeskew(),
+        ProjectionDeskew(),
         BackgroundNormalizer(),        # flatten stains / uneven paper
         NlMeansDenoiser(),
         ConfidenceMap(),               # flag faint regions (on grayscale)
@@ -173,11 +176,11 @@ does **not** treat the binary image as the only output.
 ```python
 from ottoparse import Pipeline
 from ottoparse.imaging import (
-    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
+    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ConfidenceMap,
 )
 
 pipe = Pipeline(image_steps=[
-    HoughDeskew(),
+    ProjectionDeskew(),
     NlMeansDenoiser(),
     ConfidenceMap(),        # flag faint/stained regions on grayscale; deletes nothing
     SauvolaBinarizer(),
@@ -217,13 +220,13 @@ this (both off by default, since they are layout-specific and lossy):
 ```python
 from ottoparse import Pipeline
 from ottoparse.imaging import (
-    HoughDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
+    ProjectionDeskew, NlMeansDenoiser, SauvolaBinarizer, ComponentFilter, RegionMask,
 )
 
 # Clean a periodical front page: strip specks/blobs page-wide, then mask the
 # top masthead band that holds the seal, watermark, and editorial stamp.
 pipe = Pipeline(image_steps=[
-    HoughDeskew(),
+    ProjectionDeskew(),
     NlMeansDenoiser(),
     SauvolaBinarizer(),
     ComponentFilter(),       # remove specks and solid blobs (stamps, blots)

@@ -23,7 +23,7 @@ from ottoparse.imaging.background import BackgroundNormalizer
 from ottoparse.imaging.binarize import OtsuBinarizer
 from ottoparse.imaging.confidence import ConfidenceMap
 from ottoparse.imaging.denoise import NlMeansDenoiser
-from ottoparse.imaging.deskew import HoughDeskew
+from ottoparse.imaging.deskew import ProjectionDeskew
 from ottoparse.imaging.pipeline import run_image_steps
 from ottoparse.intake.pdf_text import extract_page_text, normalize_text
 from ottoparse.intake.rasterize import rasterize_page
@@ -39,6 +39,8 @@ def default_image_steps() -> list[ImageStep]:
     Order: deskew -> background normalization -> denoise -> confidence map ->
     Otsu -> component filter.
 
+    - ``ProjectionDeskew`` estimates skew from the sharpness of the row ink
+      profile; ``HoughDeskew`` finds no long baselines on Arabic-script print.
     - ``BackgroundNormalizer`` divides the page by its estimated paper tone, so
       stains and uneven lighting flatten to white while ink keeps its contrast.
       This replaces CLAHE, which amplified stain edges into black contours.
@@ -51,7 +53,7 @@ def default_image_steps() -> list[ImageStep]:
       left after thresholding (it needs a binary image).
     """
     return [
-        HoughDeskew(),
+        ProjectionDeskew(),
         BackgroundNormalizer(),
         NlMeansDenoiser(),
         ConfidenceMap(),

@@ -23,6 +23,34 @@ outlines and paper folds into thick black contours running through the text.
     resolved kernel to the processing history.
 - `tests/test_background.py` — synthetic stain flattening, stain-outline
   suppression vs. raw Sauvola, channel selection, auto kernel, validation.
+- Projection-profile deskew (`ottoparse/imaging/deskew.py`), `ProjectionDeskew`
+  — searches +/-2x `max_angle` (coarse 0.5°, then fine 0.05°) for the rotation
+  that maximizes the sharpness (sum of squared row-to-row differences) of the
+  horizontal ink profile. It estimates on a ~1200 px working copy, flattened
+  with `BackgroundNormalizer`'s background estimate before Otsu, and keeps only
+  glyph-sized connected components. That way yellowed paper, stains, dark scan
+  margins and column rules don't steer it. Takes ~30 ms per page, logs
+  strategy `"projection"`, and keeps `HoughDeskew`'s `max_angle` /
+  `min_correction` semantics and flags.
+- A `periodical_page` test fixture: a rotated, real-like RGB page (yellowed
+  paper, stain, ragged dark margin, two columns of broken Arabic-like lines
+  with dots, white rotation corners). Tests check that `ProjectionDeskew`
+  recovers the rotation and levels the page. A regression test on
+  `samples/1-*.jpg` runs when the private samples are present and skips
+  otherwise.
+
+### Fixed
+
+- Deskew never ran on real input. `HoughDeskew` flagged `SKEW_UNDETECTED`
+  ("no near-horizontal lines found") on every real periodical sample.
+  `HoughLinesP` needs one unbroken edge segment of at least a quarter of the
+  page width (~500 px). On two-column Arabic-script print, word gaps are wider
+  than the 15 px dilation plus the 20 px `maxLineGap`, so no line ever gets
+  that long. The synthetic `cv2.putText` pages have continuous Latin baselines,
+  which hid this. The default chain now uses `ProjectionDeskew`, which
+  estimates -0.40°, -0.85° and -0.10° on `samples/1-1`, `1-2` and `1-4` and
+  recovers 3°/-5°/8° rotations of them to within ~0.4°. `HoughDeskew` is
+  unchanged and still available.
 
 ### Changed
 

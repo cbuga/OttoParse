@@ -13,9 +13,10 @@ from ottoparse.imaging.binarize import (
     SauvolaBinarizer,
 )
 from ottoparse.imaging.denoise import NlMeansDenoiser
-from ottoparse.imaging.deskew import HoughDeskew
+from ottoparse.imaging.deskew import HoughDeskew, ProjectionDeskew
 from ottoparse.imaging.pipeline import run_image_steps
 from ottoparse.imaging.utils import to_grayscale
+from ottoparse.io import load_image
 from ottoparse.model.flags import FlagCode, Severity
 from ottoparse.model.record import PageRecord, Provenance, SourcePath
 
@@ -51,6 +52,49 @@ def test_deskew_applies_and_logs(text_image):
     HoughDeskew().apply(img, rec)
     step = next(s for s in rec.history if s.name == "deskew")
     assert step.params["applied"] is True
+
+
+@pytest.mark.parametrize("angle", [5.0, -3.0, 8.0])
+def test_projection_deskew_estimates_skew(text_image, angle):
+    img = text_image(angle=angle, noise_std=20.0)
+    est = ProjectionDeskew().estimate_angle(img)
+    assert est == pytest.approx(-angle, abs=0.5)
+
+
+@pytest.mark.parametrize("angle", [4.0, -3.0, 7.0])
+def test_projection_deskew_on_rotated_periodical_page(periodical_page, angle):
+    # Yellowed RGB paper, stain, dark margin, white rotation corners, and
+    # broken Arabic-like lines: the estimate must still recover the rotation.
+    rec = _record()
+    page = periodical_page(angle=angle)
+    est = ProjectionDeskew().estimate_angle(to_grayscale(page))
+    assert est == pytest.approx(-angle, abs=0.3)
+    out = ProjectionDeskew().apply(page, rec)
+    assert out.shape == page.shape
+    step = next(s for s in rec.history if s.name == "deskew")
+    assert step.strategy == "projection"
+    assert step.params["applied"] is True
+    assert not any(f.code is FlagCode.SKEW_UNDETECTED for f in rec.flags)
+    # The levelled page is (near) level.
+    assert abs(ProjectionDeskew().estimate_angle(to_grayscale(out))) <= 0.3
+
+
+def test_projection_deskew_flags_blank_page():
+    rec = _record()
+    ProjectionDeskew().apply(np.full((400, 300), 255, np.uint8), rec)
+    assert any(f.code is FlagCode.SKEW_UNDETECTED for f in rec.flags)
+
+
+_SAMPLES = sorted((Path(__file__).parents[1] / "samples").glob("1-*.jpg"))
+
+
+@pytest.mark.skipif(not _SAMPLES, reason="private archival samples not present")
+@pytest.mark.parametrize("path", _SAMPLES, ids=lambda p: p.name)
+def test_projection_deskew_on_real_samples(path):
+    # Regression: HoughDeskew flagged SKEW_UNDETECTED on every real scan.
+    gray = to_grayscale(load_image(path))
+    est = ProjectionDeskew().estimate_angle(gray)
+    assert est is not None and abs(est) < 3.0
 
 
 # --- denoise detectors ---
